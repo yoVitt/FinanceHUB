@@ -1,0 +1,67 @@
+1. DESPESAS
+
+Lançar uma despesa significa registrar uma obrigação financeira, ou seja, algo que deve ser
+pago ou acompanhado.
+
+Ao cadastrar uma despesa, devem ser informados:
+- Descrição: nome ou explicação da despesa;
+- Categoria: tipo da despesa, como Moradia, Alimentação ou Transporte;
+- Valor: valor total da despesa;
+- Vencimento: data limite para pagamento;
+- Status: situação atual da despesa;
+- Comprovante: imagem opcional relacionada à despesa.
+
+Status disponíveis:
+- Pendente: ainda precisa ser paga;
+- Pago: o total dos pagamentos atingiu o valor da despesa;
+- Atrasado: possui saldo restante e passou da data de vencimento;
+- Cancelado: não precisa mais ser paga.
+
+Os status Pago, Atrasado e Pendente são calculados automaticamente pelo sistema.
+O status Cancelado é definido manualmente pelo usuário.
+
+Quando uma despesa fica atrasada, o sistema mostra também quantos dias se passaram desde o
+vencimento.
+
+
+2. PAGAMENTOS
+
+Lançar um pagamento significa registrar que um valor foi pago em relação a uma despesa
+existente.
+
+Ao cadastrar um pagamento, devem ser informados:
+- Despesa vinculada: despesa relacionada ao pagamento;
+- Data do pagamento;
+- Valor pago;
+- Observações opcionais.
+
+O sistema permite pagamentos parciais, mas a soma dos pagamentos nunca pode ultrapassar o
+valor total da despesa.
+
+Quando os pagamentos atingem o valor total da despesa, ela passa automaticamente para o
+status Pago e deixa de aceitar novos pagamentos.
+
+Despesas canceladas também não aceitam pagamentos.
+
+Ao editar ou excluir um pagamento, o saldo e o status da despesa são recalculados.
+
+
+3. RELACIONAMENTO ENTRE DESPESAS E PAGAMENTOS
+
+Uma despesa pode possuir nenhum, um ou vários pagamentos.
+Cada pagamento deve obrigatoriamente pertencer a uma despesa.
+
+Ao excluir uma despesa, todos os pagamentos vinculados a ela também são excluídos.
+
+O sistema também impede que o valor de uma despesa seja reduzido para um valor menor que o
+total já pago.
+
+4. ACESSO AO SISTEMA
+
+Usuários não autenticados podem consultar o resumo, as listagens e os detalhes dos registros.
+
+Usuários autenticados também podem:
+- Cadastrar despesas e pagamentos;
+- Editar despesas e pagamentos;
+- Excluir despesas e pagamentos;
+- Enviar comprovantes em imagem.

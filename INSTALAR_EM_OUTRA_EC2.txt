@@ -1,0 +1,106 @@
+1. EXTRAIR E DESVINCULAR DO REPOSITÓRIO ANTIGO
+
+Extraia o ZIP.
+
+Abra o terminal dentro da pasta FinanceHUB e execute:
+
+rm -rf .git
+git init
+git branch -M main
+
+Isso remove o vínculo com o repositório original e cria um repositório local novo.
+
+
+2. CRIAR UM REPOSITÓRIO NO GITHUB
+
+Crie um repositório vazio no GitHub.
+
+Não adicione README, .gitignore ou licença durante a criação.
+
+Depois, dentro da pasta FinanceHUB, execute:
+
+git add .
+git commit -m "Adiciona FinanceHUB"
+git remote add origin LINK_DO_NOVO_REPOSITORIO
+git push -u origin main
+
+3. CRIAR A EC2
+
+Crie uma instância EC2 usando Ubuntu Server 24.04 LTS.
+
+No grupo de segurança, libere:
+
+- Porta 22 para SSH;
+- Porta 80 para acesso ao sistema.
+
+
+4. CONFIGURAR OS SECRETS NO GITHUB
+Cadastre:
+
+EC2_HOST
+Informe o IP público, endereço público ou domínio DuckDNS da EC2.
+(recomendo criar um IP elástico)
+
+EC2_SSH_KEY
+Informe todo o conteúdo da chave privada SSH, incluindo as linhas BEGIN e END.
+
+DB_PASSWORD
+Crie uma senha para o banco MySQL. Essa também será a senha do usuário financehub no
+phpMyAdmin.
+(eu testei com 12345678)
+
+
+5. CONFIGURAR O DUCKDNS
+
+Crie um domínio próprio no DuckDNS e aponte-o para o IP público da EC2 (legal usar o elástico).
+
+Depois, no repositório do GitHub, acesse:
+
+Settings > Secrets and variables > Actions > Variables > New repository variable
+
+Cadastre:
+
+APP_URL
+Informe o endereço completo do domínio, por exemplo:
+
+http://meufinancehub.duckdns.org
+
+
+6. EXECUTAR O DEPLOY
+
+O deploy é executado automaticamente quando arquivos são enviados para a branch main.
+
+Também é possível executá-lo manualmente em:
+
+Actions > Deploy FinanceHUB to EC2 > Run workflow
+
+O workflow instala e configura automaticamente:
+
+- Apache;
+- PHP;
+- MySQL;
+- Composer;
+- phpMyAdmin;
+- Banco de dados financehub;
+- Virtual Host na porta 80;
+- Projeto Laravel.
+
+
+7. ACESSAR O SISTEMA
+
+Sistema:
+
+http://DOMINIO_DUCKDNS
+
+Login padrão:
+
+E-mail: user@gmail.com
+Senha: user
+(pode criar outros tbm, todos tem as mesmas permissões)
+
+phpMyAdmin:
+
+http://DOMINIO_DUCKDNS/phpmyadmin
+
+Usuário: financehub
+Senha: valor cadastrado no secret DB_PASSWORD

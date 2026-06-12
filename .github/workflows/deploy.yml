@@ -1,0 +1,208 @@
+name: Deploy FinanceHUB to EC2
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-financehub-ec2
+  cancel-in-progress: true
+ 
+env:
+  EC2_HOST: ${{ secrets.EC2_HOST || vars.EC2_HOST }}
+  EC2_USER: ${{ secrets.EC2_USER || vars.EC2_USER || 'ubuntu' }}
+  DEPLOY_PATH: ${{ vars.EC2_DEPLOY_PATH || '/var/www/html/financehub' }}
+  APP_NAME: ${{ vars.APP_NAME || 'FinanceHUB' }}
+  APP_URL: ${{ vars.APP_URL || secrets.APP_URL || '' }}
+  DB_DATABASE: ${{ vars.DB_DATABASE || 'financehub' }}
+  DB_USERNAME: ${{ vars.DB_USERNAME || 'financehub' }}
+  DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+
+jobs:
+  deploy:
+    name: Deploy to EC2
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout the files
+        uses: actions/checkout@v6
+
+      - name: Validate EC2 SSH access
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${EC2_HOST:-}" ]; then
+            echo "EC2_HOST is empty."
+            exit 1
+          fi
+
+          RESOLVED_IP="$(getent ahostsv4 "$EC2_HOST" | awk 'NR == 1 { print $1 }')"
+          if [ -z "${RESOLVED_IP:-}" ]; then
+            echo "Could not resolve EC2_HOST."
+            exit 1
+          fi
+
+          if ! timeout 15 bash -c "cat < /dev/null > /dev/tcp/${EC2_HOST}/22"; then
+            echo "Cannot connect to ${EC2_HOST}:22."
+            exit 1
+          fi
+
+      - name: Prepare EC2 server
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          DEPLOY_PATH: ${{ env.DEPLOY_PATH }}
+          EC2_USER: ${{ env.EC2_USER }}
+        with:
+          host: ${{ env.EC2_HOST }}
+          username: ${{ env.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          envs: DEPLOY_PATH,EC2_USER
+          script: |
+            set -euo pipefail
+            export DEBIAN_FRONTEND=noninteractive
+
+            sudo dpkg --configure -a
+            sudo apt-get -f install -y
+            sudo apt-get update
+            echo "phpmyadmin phpmyadmin/reconfigure-webserver multiselect apache2" | sudo debconf-set-selections
+            echo "phpmyadmin phpmyadmin/dbconfig-install boolean false" | sudo debconf-set-selections
+            sudo apt-get install -y --no-install-recommends \
+              apache2 mysql-server phpmyadmin composer unzip zip git curl rsync \
+              php php-cli php-common libapache2-mod-php \
+              php-mysql php-xml php-curl php-zip php-bcmath php-mbstring php-gd php-intl
+
+            sudo systemctl enable apache2
+            sudo systemctl start apache2
+            sudo systemctl enable mysql
+            sudo systemctl start mysql
+            sudo a2enmod rewrite
+            sudo a2enconf phpmyadmin || true
+
+            sudo mkdir -p \
+              "$DEPLOY_PATH" \
+              "$DEPLOY_PATH/storage/app/public" \
+              "$DEPLOY_PATH/storage/framework/cache/data" \
+              "$DEPLOY_PATH/storage/framework/sessions" \
+              "$DEPLOY_PATH/storage/framework/views" \
+              "$DEPLOY_PATH/bootstrap/cache"
+
+            sudo chown -R "$EC2_USER":www-data "$DEPLOY_PATH"
+            sudo chmod -R ug+rwx "$DEPLOY_PATH"
+
+      - name: Sync project files to EC2
+        uses: easingthemes/ssh-deploy@v6.0.1
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
+          REMOTE_HOST: ${{ env.EC2_HOST }}
+          REMOTE_USER: ${{ env.EC2_USER }}
+          SOURCE: "./"
+          TARGET: "${{ env.DEPLOY_PATH }}/"
+          ARGS: "-rlgoDzvc --delete"
+          EXCLUDE: "/.git/, /.github/, /.env, /vendor/, /bootstrap/cache/*.php, /storage/app/public/, /storage/logs/, /storage/framework/cache/, /storage/framework/sessions/, /storage/framework/views/, /public/storage/"
+
+      - name: Finish Laravel deployment
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          DEPLOY_PATH: ${{ env.DEPLOY_PATH }}
+          EC2_HOST: ${{ env.EC2_HOST }}
+          EC2_USER: ${{ env.EC2_USER }}
+          APP_NAME: ${{ env.APP_NAME }}
+          APP_URL: ${{ env.APP_URL }}
+          DB_DATABASE: ${{ env.DB_DATABASE }}
+          DB_USERNAME: ${{ env.DB_USERNAME }}
+          DB_PASSWORD: ${{ env.DB_PASSWORD }}
+        with:
+          host: ${{ env.EC2_HOST }}
+          username: ${{ env.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          envs: DEPLOY_PATH,EC2_HOST,EC2_USER,APP_NAME,APP_URL,DB_DATABASE,DB_USERNAME,DB_PASSWORD
+          script: |
+            set -euo pipefail
+            cd "$DEPLOY_PATH"
+
+            [ -f .env.example ] || { echo ".env.example was not deployed."; exit 1; }
+            [ -f .env ] || cp .env.example .env
+
+            set_env() {
+              KEY="$1"
+              VALUE="$2"
+              ESCAPED_VALUE="$(printf '%s' "$VALUE" | sed -e 's/[\/&]/\\&/g')"
+              if grep -q "^${KEY}=" .env; then
+                sed -i "s/^${KEY}=.*/${KEY}=${ESCAPED_VALUE}/g" .env
+              else
+                printf '%s=%s\n' "$KEY" "$VALUE" >> .env
+              fi
+            }
+
+            [ -n "${APP_URL:-}" ] || APP_URL="http://${EC2_HOST}"
+            [ -n "${DB_PASSWORD:-}" ] || { echo "DB_PASSWORD is required."; exit 1; }
+
+            set_env APP_NAME "$APP_NAME"
+            set_env APP_ENV production
+            set_env APP_DEBUG false
+            set_env APP_URL "$APP_URL"
+            set_env DB_CONNECTION mysql
+            set_env DB_HOST 127.0.0.1
+            set_env DB_PORT 3306
+            set_env DB_DATABASE "$DB_DATABASE"
+            set_env DB_USERNAME "$DB_USERNAME"
+            set_env DB_PASSWORD "$DB_PASSWORD"
+            set_env FILESYSTEM_DISK public
+            set_env CACHE_DRIVER file
+            set_env QUEUE_CONNECTION sync
+            set_env SESSION_DRIVER file
+
+            DB_DATABASE_SQL="$(printf '%s' "$DB_DATABASE" | sed 's/`/``/g')"
+            DB_USERNAME_SQL="$(printf '%s' "$DB_USERNAME" | sed "s/'/''/g")"
+            DB_PASSWORD_SQL="$(printf '%s' "$DB_PASSWORD" | sed "s/'/''/g")"
+
+            sudo mysql <<SQL
+            CREATE DATABASE IF NOT EXISTS \`${DB_DATABASE_SQL}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+            CREATE USER IF NOT EXISTS '${DB_USERNAME_SQL}'@'localhost' IDENTIFIED BY '${DB_PASSWORD_SQL}';
+            ALTER USER '${DB_USERNAME_SQL}'@'localhost' IDENTIFIED BY '${DB_PASSWORD_SQL}';
+            GRANT ALL PRIVILEGES ON \`${DB_DATABASE_SQL}\`.* TO '${DB_USERNAME_SQL}'@'localhost';
+            FLUSH PRIVILEGES;
+            SQL
+
+            composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction
+
+            if ! grep -q '^APP_KEY=base64:' .env; then
+              php artisan key:generate --force
+            fi
+
+            php artisan optimize:clear
+            php artisan migrate --force
+            php artisan storage:link || true
+            php artisan view:cache
+
+            sudo mkdir -p storage/app/public storage/framework/cache/data storage/framework/sessions storage/framework/views bootstrap/cache
+            sudo chown -R "$EC2_USER":www-data "$DEPLOY_PATH"
+            sudo chmod -R 775 storage bootstrap/cache
+
+            SERVER_NAME="$(printf '%s' "$APP_URL" | sed -E 's#^https?://([^/:]+).*#\1#')"
+            if [ -z "$SERVER_NAME" ] || [ "$SERVER_NAME" = "$APP_URL" ]; then
+              SERVER_NAME="$EC2_HOST"
+            fi
+
+            sudo tee /etc/apache2/sites-available/financehub.conf >/dev/null <<APACHE
+            <VirtualHost *:80>
+                ServerName ${SERVER_NAME}
+                DocumentRoot ${DEPLOY_PATH}/public
+
+                <Directory ${DEPLOY_PATH}/public>
+                    AllowOverride All
+                    Require all granted
+                </Directory>
+
+                ErrorLog \${APACHE_LOG_DIR}/financehub-error.log
+                CustomLog \${APACHE_LOG_DIR}/financehub-access.log combined
+            </VirtualHost>
+            APACHE
+
+            sudo a2dissite 000-default.conf || true
+            sudo a2ensite financehub.conf
+            sudo systemctl reload apache2
