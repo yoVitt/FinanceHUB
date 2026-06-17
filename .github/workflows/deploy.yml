@@ -18,7 +18,7 @@ env:
   APP_URL: ${{ vars.APP_URL || secrets.APP_URL || '' }}
   DB_DATABASE: ${{ vars.DB_DATABASE || 'financehub' }}
   DB_USERNAME: ${{ vars.DB_USERNAME || 'financehub' }}
-  DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+  DB_PASSWORD: ${{ secrets.DB_PASSWORD || 'senha_da_nasa' }}
 
 jobs:
   deploy:
