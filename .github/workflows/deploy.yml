@@ -15,7 +15,7 @@ env:
   EC2_USER: ${{ secrets.EC2_USER || vars.EC2_USER || 'ubuntu' }}
   DEPLOY_PATH: ${{ vars.EC2_DEPLOY_PATH || '/var/www/html/financehub' }}
   APP_NAME: ${{ vars.APP_NAME || 'FinanceHUB' }}
-  APP_URL: ${{ vars.APP_URL || secrets.APP_URL || '' }}
+  APP_URL: ${{ vars.APP_URL || secrets.APP_URL || 'https://financestarks.duckdns.org/' }}
   DB_DATABASE: ${{ vars.DB_DATABASE || 'financehub' }}
   DB_USERNAME: ${{ vars.DB_USERNAME || 'financehub' }}
   DB_PASSWORD: ${{ secrets.DB_PASSWORD || 'senha_da_nasa' }}
